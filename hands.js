@@ -310,7 +310,6 @@ let c8 = calculate_hand(hand6)
 console.log("7", c5)
 console.log("8", c6)
 assert(c7 < c8)
-*/
 
 let player1 = [{card: ACE, suit: HEARTS, is_player: true}, {card: KING, suit: HEARTS, is_player: true}]
 let common1 = [
@@ -322,3 +321,4 @@ let common1 = [
 ]
 let [value, best1] = find_best_hand(player1, common1)
 console.log(value, best1)
+*/

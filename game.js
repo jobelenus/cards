@@ -1,31 +1,13 @@
-let BUTTON_POSITION = 0
 let BIG_BLIND = 10
 let SMALL_BLIND = 5
 
 const { ACE, HEARTS, SPADES, CLUBS, DIAMONDS } = require('./base.js')
+const hand_operations = require('./hands.js')
 
 const Redis = require("ioredis");
 const redis = new Redis();
 
-const GAME_STEPS = [
-	'move_button',
-	'blind-big',
-	'blind-small',
-	'deal_all_players-2',
-	'bet',
-	'burn',
-	'deal-common-flop',
-	'bet',
-	'burn',
-	'deal-common-turn',
-	'bet',
-	'burn',
-	'deal-common-river',
-	'bet',
-	'resolve-poker'
-]
-
-const hand9876 = {
+/*const hand9876 = {
   burnt_cards: [],
   button: 'player_id9876',
   seats: [
@@ -57,9 +39,11 @@ const hand9876 = {
 const pot9876 = {
   //current_pot: 1,
   current_pot: 2,
-  deal: [
+  blinds : [
     { player: player_id1234, bet: 1, pot1: 1, blind: 'small' },
     { player: player_id5678, bet: 2, pot1: 2, blind: 'big' },
+  ],
+  deal: [
     { player: player_id9876, bet: 3, pot1: 3, all_in: true },
     { player: player_id1234, bet: 4, pot1: 2, pot2: 2 },
     { player: player_id5678, bet: 3, pot1: 1, pot2: 2 },
@@ -70,15 +54,49 @@ const pot9876 = {
   ],
   turn: [],
   river: [],
+}*/
+
+function get_chips(player) {
+  return Infinity  // TODO
+}
+
+function is_bet_allin (player, amount) {
+  const player_total = get_chips(player)
+  if (amount >= player_total) {
+    return player_total
+  }
+  return false
 }
 
 function move_button(hand) {
+  let idx = hand.seats.indexOf(hand.button)
+  idx = idx - 1
+  if (idx < 0) idx = hand.length - 1  // "move left" is a negative index
+  hand.button = hand.seats[idx]
 }
 
-function big_blind(hand) {
+function _blind(hand, pot, idx, bet, blind) {
+  if (idx === hand.length) idx = 0
+  const player = hand.seats[idx]
+  const all_in = is_bet_allin(player, bet)
+  if (all_in) {
+    bet = all_in
+    all_in = true
+    // TODO increment pot
+  }
+  pot.blinds.push({ player, bet, pot1: bet, blind, all_in })
+}
+
+function big_blind(hand, pot) {
+  let idx = hand.seats.indexOf(hand.button)
+  idx = idx + 1  // "move right" is a positive index
+  _blind(hand, pot, idx, BIG_BLIND, 'big')
 }
 
 function small_blind(hand) {
+  let idx = hand.seats.indexOf(hand.button)
+  idx = idx + 2  // "move right" is a positive index
+  _blind(hand, pot, idx, SMALL_BLIND, 'small')
 }
 
 /**
@@ -131,15 +149,56 @@ function deal_all_players(hand, deck, num_cards) {
   hand.seats.forEach(player_id => {
     hand[player_id] = deck.splice(0, num_cards)
   })
-  return hand
 }
 
-function bet(hand_key) {
+function bet(pot, player, amount, stage) {
+  let all_in = is_bet_allin(player, amount)
+  if (all_in) {
+    bet = all_in
+    all_in = true
+    // TODO increment pot
+  }
+  const check = amount === 0 ? true : false
+  const data = { player, bet, all_in, check }
+  const current = `pot${pot.current_pot}`
+  data[current] = bet
+  pot[stage].push(data)
+}
+
+function _array_match(arr1, arr2) {
+  let match = false
+  if (arr1.length === arr2.length) {
+    match = arr2.every(player => arr1.includes(player))
+  }
+  return match
+}
+
+/**
+ * Returns a boolean whether or not betting is complete for this round
+ */
+function resolve_betting(hand, pot, stage) {
+  let resolve = false
+  // did everyone check?
+  const players_who_check = pot[stage].filter(bet => bet.check).map(bet => bet.player)
+  resolve = _array_match(players_who_check, hand.seats)
+  if (resolve) return resolve
+
+  // are all bets called?
+  const active_players = pot[stage].filter(bet => !bet.fold).filter(bet => !bet.all_in)
+  const zero_out = active_players.reduce((obj, bet) => {
+    obj[bet.player] = 0
+    return obj
+  }, {})
+  const players_bet_totals = active_players.reduce((obj, bet) => {
+    obj[bet.player] += bet.bet
+    return obj
+  }, zero_out)
+  resolve = Object.values(players_bet_totals).every(bet => bet === players_bet_totals[0])
+  return resolve
 }
 
 function burn(hand, deck, num_cards) {
   hand.burnt_cards.push(...deck.splice(0, num_cards))
-  return hand
 }
 
 function deal_common(hand, deck, step) {
@@ -151,8 +210,7 @@ function deal_common(hand, deck, step) {
     case 'river': hand.common_river = deck.splice(0, 1).pop()
             break
   }
-  return hand
 }
 
-function resolve(hand_key) {
+function resolve_hand(hand) {
 }
