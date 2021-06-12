@@ -4,9 +4,6 @@ let SMALL_BLIND = 5
 const { ACE, HEARTS, SPADES, CLUBS, DIAMONDS } = require('./base.js')
 const hand_operations = require('./hands.js')
 
-const Redis = require("ioredis");
-const redis = new Redis();
-
 /*const hand9876 = {
   burnt_cards: [],
   button: 'player_id9876',
@@ -131,20 +128,6 @@ function generate_deck(hand) {
   return shuffle_array(remaining_deck.filter(Boolean))
 }
 
-async function load_hand(hand_key) {
-  const hand = await redis.hgetall(hand_key)
-  const parsed_hand = Object.keys(hand).reduce(((obj, k) => JSON.parse(hand[k])))
-  const deck = generate_deck(parsed_hand)
-  return {parsed_hand, deck}
-}
-
-async function save_hand(hand_key, hand) {
-  const string_hand = Object.keys(hand).reduce((obj, k) => {
-    obj[k] = JSON.stringify(hand[k])
-  }, {})
-  await redis.hmset(hand_key, string_hand)
-}
-
 function deal_all_players(hand, deck, num_cards) {
   hand.seats.forEach(player_id => {
     hand[player_id] = deck.splice(0, num_cards)
@@ -156,13 +139,15 @@ function bet(pot, player, amount, stage) {
   if (all_in) {
     bet = all_in
     all_in = true
-    // TODO increment pot
   }
   const check = amount === 0 ? true : false
   const data = { player, bet, all_in, check }
   const current = `pot${pot.current_pot}`
   data[current] = bet
   pot[stage].push(data)
+  if (all_in) {
+    pot.current_pot += 1
+  }
 }
 
 function _array_match(arr1, arr2) {
@@ -212,5 +197,33 @@ function deal_common(hand, deck, step) {
   }
 }
 
-function resolve_hand(hand) {
+/**
+ * Returns an object whose keys are the pot# and the player in that pot with the winning hand
+ */
+function resolve_hand(hand, pot) {
+  const players_best_hand = hand.seats.reduce((obj, player) => {
+    obj[player] = hand_operations.find_best_hand(hand[player], hand.common_cards)
+    obj[player].player = player
+    return obj
+  }, {})
+
+  return Array(pot.current_pot).keys().reduce((obj, potN) => {
+    potN += 1  // array starts at 0, but we count at 1
+    let pot_amount = 0
+    const pot_players = new Set()
+    const stages = ['blinds', 'deal', 'flop', 'turn', 'river']
+    for (const stage in stages) {
+      pot[stage].filter(bet => bet.pot == potN).forEach(bet => {
+        pot_players.add(bet.player)
+        pot_amount += bet[`pot${potN}`]
+      })
+    }
+    
+    const pot_winner_value = Math.max(...Object.values(players_best_hand).filter(p => Object.keys(pot_players).some(p)).map(p => p.max))
+    obj[potN] = {
+      player: Object.values(players_best_hand).filter(p => p.max === pot_winner_value).pop().player,
+      amount: pot_amount
+    }
+    return obj
+  })
 }

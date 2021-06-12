@@ -215,7 +215,7 @@ function find_best_hand(player_cards, common_cards) {
 	let max = Math.max(...possible_values)
 	let idx = possible_values.indexOf(max)
 	let hand = possible_hands[idx]
-	return [max, hand]
+	return {max, hand}
 }
 
 /*
@@ -319,6 +319,6 @@ let common1 = [
 	{card: TWO, suit: HEARTS, is_common: true},
 	{card: THREE, suit: HEARTS, is_common: true}
 ]
-let [value, best1] = find_best_hand(player1, common1)
-console.log(value, best1)
+let {max, hand} = find_best_hand(player1, common1)
+console.log(max, hand)
 */
